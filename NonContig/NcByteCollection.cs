@@ -6,13 +6,36 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
+using System.Xml.Serialization;
+using System.Xml;
+using System.Xml.Schema;
 
 namespace NonContig {
 
 	/// <summary>
-	/// Represents a collection of bytes that does not require a contiguous block of memory to be allocated.
+	/// Represents a collection of bytes that does not require a contiguous 
+	/// block of memory to be allocated.
 	/// </summary>
-	public class NcByteCollection : IList<byte>, ICloneable {
+	/// <remarks>
+	/// <para>
+	/// This type implements <see cref="IList{byte}"/> to allow both sequential 
+	/// and random access to individual bytes. Additional methods allow adding, 
+	/// inserting and removing sequences of bytes.
+	/// </para>
+	/// <para>
+	/// The collection can be duplicated via <see cref="ICloneable"/>, with 
+	/// additional methods to copy subsets of the data. Also included are the 
+	/// stream-like <see cref="Copy"/> methods which allow efficient reading 
+	/// and writing using managed or unmanaged memory.
+	/// </para>
+	/// <para>
+	/// Custom serialization is implemented via <see cref="ISerializable"/> and 
+	/// <see cref="IXmlSerializable"/>.
+	/// </para>
+	/// </remarks>
+	[Serializable]
+	public class NcByteCollection : IList<byte>, ICloneable, ISerializable, IXmlSerializable {
 
 		const int BLOCK_SIZE = 4096;
 
@@ -25,21 +48,21 @@ namespace NonContig {
 		private class NcByteBlock {
 
 			/// <summary>
-			/// Gets or sets the contiguously-allocated byte array used to hold this block.
+			/// The contiguously-allocated byte array used to hold this block.
 			/// </summary>
-			public byte[] Buffer { get; set; }
+			public byte[] Buffer;
 			/// <summary>
-			/// Gets or sets the number of bytes actually used by the block.
+			/// The number of bytes actually used by the block.
 			/// </summary>
-			public int UsedCount { get; set; }
+			public int UsedCount;
 			/// <summary>
-			/// Gets or sets the previous node, or null if this is the first node.
+			/// The previous node, or null if this is the first node.
 			/// </summary>
-			public NcByteBlock Prev { get; set; }
+			public NcByteBlock Prev;
 			/// <summary>
-			/// Gets or sets the next node, or null if this is the last node.
+			/// The next node, or null if this is the last node.
 			/// </summary>
-			public NcByteBlock Next { get; set; }
+			public NcByteBlock Next;
 
 			/// <summary>
 			/// Initialises a new instance of the <see cref="NcByteBlock"/> class using the specified block size.
@@ -122,6 +145,41 @@ namespace NonContig {
 			}
 		}
 
+#if DEBUG
+		/// <summary>
+		/// Gets the number of blocks used by the collection to store its data.
+		/// </summary>
+		public int BlockCount {
+			get {
+				int count = 0;
+
+				NcByteBlock current = _first;
+				while (current != null) {
+					count++;
+					current = current.Next;
+				}
+
+				return count;
+			}
+		}
+		/// <summary>
+		/// Gets the total block bytes, regardless of whether they are used or free.
+		/// </summary>
+		public long BlockLengthTotal {
+			get {
+				long count = 0;
+
+				NcByteBlock current = _first;
+				while (current != null) {
+					count += current.Buffer.Length;
+					current = current.Next;
+				}
+
+				return count;
+			}
+		}
+#endif
+
 		bool ICollection<byte>.IsReadOnly => false;
 
 		/// <summary>
@@ -147,9 +205,9 @@ namespace NonContig {
 		/// <param name="data"></param>
 		public NcByteCollection(byte[] data) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			Add(data);			
+			Add(data);
 		}
-		
+
 		/// <summary>
 		/// Initialises a new instance of the <see cref="NcByteCollection"/> 
 		/// class, copying the values from an existing sequence of bytes.
@@ -158,6 +216,23 @@ namespace NonContig {
 		public NcByteCollection(IEnumerable<byte> data) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			Add(data);
+		}
+
+		/// <summary>
+		/// Serialization constructor.
+		/// </summary>
+		/// <param name="info"></param>
+		/// <param name="context"></param>
+		protected NcByteCollection(SerializationInfo info, StreamingContext context) {
+			int blockCount = info.GetInt32("Count");
+			long position = 0;
+
+			for (int i = 0; i < blockCount; i++) {
+				string name = String.Format("Block{0}", i);
+				byte[] value = (byte[])info.GetValue(name, typeof(byte[]));
+				Copy(value, 0, position, value.Length);
+				position += value.Length;
+			}
 		}
 
 		/// <summary>
@@ -223,20 +298,21 @@ namespace NonContig {
 		/// <param name="data"></param>
 		public void Add(byte[] data) {
 			int i = 0;
+			int size;
 			while (i < data.Length) {
 				if (_last == null) {
 					// first block (allow smaller block size)
-					_first = _last = new NcByteBlock(Math.Min(data.Length, BLOCK_SIZE));
+					_first = _last = new NcByteBlock(size = Math.Min(data.Length, BLOCK_SIZE));
 				}
-				else if (_last.UsedCount >= _last.Buffer.Length) {
+				else if ((size = _last.Buffer.Length - _last.UsedCount) == 0) {
 					// new block needed, becomes the new last node
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(size = BLOCK_SIZE);
 					_last.Next = next;
 					next.Prev = _last;
 					_last = next;
 				}
 
-				int count = Math.Min(_last.Buffer.Length - _last.UsedCount, data.Length - i);
+				int count = Math.Min(size, data.Length - i);
 				Buffer.BlockCopy(data, i, _last.Buffer, _last.UsedCount, count);
 				_last.UsedCount += count;
 				i += count;
@@ -250,20 +326,22 @@ namespace NonContig {
 		/// <param name="count"></param>
 		public void Grow(long count) {
 			long i = 0;
+			int size;
+
 			while (i < count) {
 				if (_last == null) {
 					// first block (allow smaller block size)
-					_first = _last = new NcByteBlock((int)Math.Min(count, BLOCK_SIZE));
+					_first = _last = new NcByteBlock(size = (int)Math.Min(count, BLOCK_SIZE));
 				}
-				else if (_last.UsedCount >= _last.Buffer.Length) {
+				else if ((size = _last.Buffer.Length - _last.UsedCount) == 0) {
 					// new block needed, becomes the new last node
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(size = BLOCK_SIZE);
 					_last.Next = next;
 					next.Prev = _last;
 					_last = next;
 				}
 
-				int size = (int)Math.Min(_last.Buffer.Length - _last.UsedCount, count - i);
+				size = (int)Math.Min(size, count - i);
 				_last.UsedCount += size;
 				i += size;
 			}
@@ -409,7 +487,7 @@ namespace NonContig {
 			}
 
 			byte[] trailing = null;
-			if (offset > 0) {			
+			if (offset > 0) {
 				// copy trailing bytes into a temporary array
 				trailing = new byte[current.UsedCount - offset];
 				Buffer.BlockCopy(current.Buffer, offset, trailing, 0, trailing.Length);
@@ -488,7 +566,7 @@ namespace NonContig {
 			if (oldNext != null)
 				oldNext.Prev = block;
 			else
-				_last = block;			
+				_last = block;
 		}
 
 		void InsertBlockBefore(NcByteBlock before, NcByteBlock block) {
@@ -622,7 +700,21 @@ namespace NonContig {
 		public void Copy(byte[] src, int srcIndex, long destIndex, int count) {
 			int offset;
 			NcByteBlock current = BlockAt(destIndex, out offset);
-			if (current == null) throw new IndexOutOfRangeException();
+			if (current == null) {
+				if (destIndex == 0) {
+					// first block
+					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+				}
+				else if (destIndex == LongCount) {
+					// subsequent blocks
+					current = new NcByteBlock();
+					current.Prev = _last;
+					_last.Next = current;
+				}
+				else {
+					throw new IndexOutOfRangeException();
+				}
+			}
 
 			int i = 0;
 			while (i < count) {
@@ -687,7 +779,21 @@ namespace NonContig {
 		public void Copy(IntPtr src, long destIndex, int count) {
 			int offset;
 			NcByteBlock current = BlockAt(destIndex, out offset);
-			if (current == null) throw new IndexOutOfRangeException();
+			if (current == null) {
+				if (destIndex == 0) {
+					// first block
+					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+				}
+				else if (destIndex == LongCount) {
+					// subsequent blocks
+					current = new NcByteBlock();
+					current.Prev = _last;
+					_last.Next = current;
+				}
+				else {
+					throw new IndexOutOfRangeException();
+				}
+			}
 
 			int i = 0;
 			while (i < count) {
@@ -739,6 +845,103 @@ namespace NonContig {
 		}
 
 		/// <summary>
+		/// Copies a range of bytes from a stream into the collection at the specified index.
+		/// </summary>
+		/// <param name="src"></param>
+		/// <param name="destIndex"></param>
+		/// <param name="count"></param>
+		/// <returns>The number of bytes actually copied from the stream.</returns>
+		/// <remarks>
+		/// <para>
+		/// If the stream does not contain the requested number of bytes, 
+		/// the return value will be less than <paramref name="count"/>.
+		/// </para>
+		/// <para>
+		/// This method copies data directly from the stream without using an intermediate buffer.
+		/// </para>
+		/// </remarks>
+		public int Copy(Stream src, long destIndex, int count) {
+			int offset;
+			NcByteBlock current = BlockAt(destIndex, out offset);
+			if (current == null) {
+				if (destIndex == 0) {
+					// first block
+					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+				}
+				else if (destIndex == LongCount) {
+					// subsequent blocks
+					current = new NcByteBlock();
+					current.Prev = _last;
+					_last.Next = current;
+				}
+				else {
+					throw new IndexOutOfRangeException();
+				}
+			}
+
+			int i = 0;
+			while (i < count) {
+				// existing blocks can't be resized (except the last block)
+				int size = Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
+				int actual = src.Read(current.Buffer, offset, size);
+				current.UsedCount = offset + actual;
+				i += actual;
+
+				if (actual < size) break;
+
+				if (current.Next == null) {
+					// additional block needed
+					NcByteBlock next = new NcByteBlock();
+					current.Next = next;
+					next.Prev = current;
+					_last = next;
+				}
+
+				offset = 0;
+				current = current.Next;
+			}
+
+			return i;
+		}
+
+		/// <summary>
+		/// Copies a range of bytes, starting from the specified index, into a stream.
+		/// </summary>
+		/// <param name="srcIndex"></param>
+		/// <param name="dest"></param>
+		/// <param name="count"></param>
+		/// <returns>The number of bytes actually copied to the stream.</returns>
+		/// <remarks>
+		/// <para>
+		/// If the collection does not contain the requested number of bytes, 
+		/// the return value will be less than <paramref name="count"/>.
+		/// </para>
+		/// <para>
+		/// This method copies data directly to the stream without using an intermediate buffer.
+		/// </para>
+		/// </remarks>
+		public int Copy(long srcIndex, Stream dest, int count) {
+			int offset;
+			NcByteBlock current = BlockAt(srcIndex, out offset);
+			if (current == null) return 0;
+
+			int i = 0;
+			while (i < count) {
+				// existing blocks can't be resized (except the last block)
+				int size = Math.Min(count - i, current.UsedCount - offset);
+				dest.Write(current.Buffer, offset, size);
+				i += size;
+
+				if (current.Next == null) break;
+
+				offset = 0;
+				current = current.Next;
+			}
+
+			return i;
+		}
+
+		/// <summary>
 		/// Copies a range of bytes from this collection into another collection.
 		/// </summary>
 		/// <param name="index"></param>
@@ -747,7 +950,7 @@ namespace NonContig {
 		/// <remarks>
 		/// Fragmentation in the source collection will not be reflected in the destination.
 		/// </remarks>
-		private void CloneRange(long index, long count, NcByteCollection dest) {			
+		private void CloneRange(long index, long count, NcByteCollection dest) {
 			if (count > 0) {
 				dest._first = dest._last = new NcByteBlock((int)Math.Min(BLOCK_SIZE, count));
 
@@ -840,6 +1043,83 @@ namespace NonContig {
 
 				current = current.Next;
 			}
+		}
+
+		/// <summary>
+		/// Populates a <see cref="SerializationInfo"/> with the data needed to 
+		/// serialize the object.
+		/// </summary>
+		/// <param name="info"></param>
+		/// <param name="context"></param>
+		/// <remarks>
+		/// Any block fragmentation present in the collection will persist in 
+		/// the serialized form of the object, but is compacted during 
+		/// deserialization.
+		/// </remarks>
+		protected virtual void GetObjectData(SerializationInfo info, StreamingContext context) {
+			int blockCount = 0;
+			NcByteBlock current = _first;
+			while (current != null) {
+				string name = String.Format("Block{0}", blockCount++);
+				byte[] value = new byte[current.UsedCount];
+				Buffer.BlockCopy(current.Buffer, 0, value, 0, current.UsedCount);
+				info.AddValue(name, value);
+				current = current.Next;
+			}
+
+			info.AddValue("Count", blockCount);
+		}
+
+		void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context) {
+			GetObjectData(info, context);
+		}
+
+		XmlSchema IXmlSerializable.GetSchema() {
+			return null;
+		}
+
+		/// <summary>
+		/// Generates the object from its XML representation.
+		/// </summary>
+		/// <param name="reader"></param>
+		protected virtual void ReadXml(XmlReader reader) {
+			long position = 0;
+
+			while (reader.LocalName.Equals("Block") || reader.ReadToFollowing("Block")) {
+				byte[] buffer = new byte[BLOCK_SIZE];
+				int bytesRead = 0;
+				while ((bytesRead = reader.ReadElementContentAsBase64(buffer, 0, buffer.Length)) > 0) {
+					Copy(buffer, 0, position, bytesRead);
+					position += bytesRead;
+				}
+			}			
+		}		
+
+		void IXmlSerializable.ReadXml(XmlReader reader) {
+			ReadXml(reader);
+		}
+
+		/// <summary>
+		/// Converts the object into its XML representation.
+		/// </summary>
+		/// <param name="writer"></param>
+		/// <remarks>
+		/// Any block fragmentation present in the collection will persist in 
+		/// the serialized form of the object, but is compacted during 
+		/// deserialization.
+		/// </remarks>
+		protected virtual void WriteXml(XmlWriter writer) {
+			NcByteBlock current = _first;
+			while (current != null) {
+				writer.WriteStartElement("Block");
+				writer.WriteBase64(current.Buffer, 0, current.UsedCount);
+				writer.WriteEndElement();
+				current = current.Next;
+			}
+		}
+
+		void IXmlSerializable.WriteXml(XmlWriter writer) {
+			WriteXml(writer);
 		}
 	}	
 }

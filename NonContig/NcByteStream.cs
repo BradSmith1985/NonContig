@@ -61,6 +61,11 @@ namespace NonContig {
 		/// store.
 		/// </summary>
 		/// <param name="data"></param>
+		/// <remarks>
+		/// An instance initialised with this constructor will modify the 
+		/// original data. If this is not intended, use <see cref="NcByteCollection.Clone"/> 
+		/// to make a copy of the data first.
+		/// </remarks>
 		public NcByteStream(NcByteCollection data) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			_data = data;
@@ -71,6 +76,10 @@ namespace NonContig {
 		/// initially populated with the specified array of bytes.
 		/// </summary>
 		/// <param name="data"></param>
+		/// <remarks>
+		/// An instance initialised with this constructor will not modify the 
+		/// original data.
+		/// </remarks>
 		public NcByteStream(byte[] data) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			_data = new NcByteCollection(data);
@@ -81,6 +90,10 @@ namespace NonContig {
 		/// initially populated with the specified sequence of bytes.
 		/// </summary>
 		/// <param name="data"></param>
+		/// <remarks>
+		/// An instance initialised with this constructor will not modify the 
+		/// original data.
+		/// </remarks>
 		public NcByteStream(IEnumerable<byte> data) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			_data = new NcByteCollection(data);

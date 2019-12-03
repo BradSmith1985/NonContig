@@ -4,11 +4,19 @@ using System.Linq;
 using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NonContig;
+using System.Runtime.Serialization;
+using System.Xml.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace NcTests {
 
 	internal static class NcTestUtils {
 
+		/// <summary>
+		/// Returns an array of the specified length containing random bytes.
+		/// </summary>
+		/// <param name="count"></param>
+		/// <returns></returns>
 		public static byte[] RandomBytes(int count) {
 			byte[] data = new byte[count];
 			Random rnd = new Random();
@@ -230,7 +238,7 @@ namespace NcTests {
 		}
 
 		[TestMethod]
-		public void CompactTest() {
+		public void TestCompact() {
 			NcByteCollection data = new NcByteCollection(NcTestUtils.RandomBytes(12 * 1024));
 
 			data.Remove(3 * 1024, 100);
@@ -238,13 +246,107 @@ namespace NcTests {
 			data.Remove(5 * 1024, 5 * 1024);
 			data.Insert(6 * 1024, NcTestUtils.RandomBytes(5 * 1024));
 			data.Remove(7 * 1024, 3 * 1024);
-
+#if DEBUG
+			long oldBytes = data.BlockLengthTotal;
+			Console.WriteLine("Used bytes: {0}, Total bytes: {1}, Blocks: {2}", data.LongCount, data.BlockLengthTotal, data.BlockCount);
+#endif
 			byte[] snapshot = data.ToArray();
 			data.Compact();
+#if DEBUG
+			Console.WriteLine("Used bytes: {0}, Total bytes: {1}, Blocks: {2}", data.LongCount, data.BlockLengthTotal, data.BlockCount);
+#endif
 			byte[] compacted = data.ToArray();
-
 			Assert.IsTrue(snapshot.SequenceEqual(compacted));
+#if DEBUG
+			Assert.AreNotEqual(oldBytes, data.BlockLengthTotal);
+#endif
 		}
+
+		[TestMethod]
+		public void TestBinarySerialization() {
+			NcByteCollection original = new NcByteCollection(NcTestUtils.RandomBytes(12 * 1024));
+			BinaryFormatter formatter = new BinaryFormatter();
+			using (MemoryStream ms = new MemoryStream()) {
+				formatter.Serialize(ms, original);
+				ms.Position = 0;				
+				NcByteCollection deserialized = (NcByteCollection)formatter.Deserialize(ms);
+				Assert.IsTrue(original.SequenceEqual(deserialized));
+			}
+		}
+
+		[TestMethod]
+		public void TestXmlSerialization() {
+			NcByteCollection original = new NcByteCollection(NcTestUtils.RandomBytes(12 * 1024));
+			XmlSerializer xs = new XmlSerializer(typeof(NcByteCollection));
+			using (MemoryStream ms = new MemoryStream()) {
+				xs.Serialize(ms, original);
+				ms.Position = 0;
+				NcByteCollection deserialized = (NcByteCollection)xs.Deserialize(ms);
+				Assert.IsTrue(original.SequenceEqual(deserialized));				
+			}
+		}
+
+		[TestMethod]
+		public void TestCopyToStream() {
+			NcByteCollection data = new NcByteCollection(NcTestUtils.RandomBytes(12 * 1024));
+			MemoryStream ms = new MemoryStream();
+			data.Copy(3 * 1024, ms, 5 * 1024);
+
+			Assert.IsTrue(ms.ToArray().SequenceEqual(data.Skip(3 * 1024).Take(5 * 1024)));
+		}
+
+		[TestMethod]
+		public void TestCopyFromStream() {
+			NcByteCollection data = new NcByteCollection();
+			MemoryStream ms = new MemoryStream(NcTestUtils.RandomBytes(12 * 1024));
+			ms.Position = 3 * 1024;
+			data.Copy(ms, 0, 5 * 1024);
+
+			Assert.IsTrue(data.SequenceEqual(ms.ToArray().Skip(3 * 1024).Take(5 * 1024)));
+		}
+
+		//[TestMethod]
+		//public void TestMemoryNc() {
+		//	LinkedList<NcByteCollection> instances = new LinkedList<NcByteCollection>();
+		//	int count = 0;
+		//	while (true) {
+		//		try {
+		//			NcByteCollection data = new NcByteCollection();
+		//			data.Grow(10 * 1024 * 1024);
+		//			instances.AddLast(data);
+		//			count++;
+		//		}
+		//		catch (OutOfMemoryException) {
+		//			Console.WriteLine("Collections allocated: {0}", count);
+		//			break;
+		//		}
+		//	}
+		//	instances.Clear();
+		//	instances = null;
+		//	GC.Collect();
+		//	GC.WaitForPendingFinalizers();
+		//}
+
+		//[TestMethod]
+		//public void TestMemoryArrays() {
+		//	LinkedList<byte[]> instances = new LinkedList<byte[]>();
+		//	int count = 0;
+		//	while (true) {
+		//		try {
+		//			byte[] data = new byte[10 * 1024 * 1024];
+		//			instances.AddLast(data);
+		//			count++;
+		//		}
+		//		catch (OutOfMemoryException) {
+		//			Console.WriteLine("Arrays allocated: {0}", count);
+		//			break;
+		//		}
+		//	}
+		//	instances.Clear();
+		//	instances = null;
+		//	GC.Collect();
+		//	GC.WaitForPendingFinalizers();
+		//}
 	}
 
 	[TestClass]
@@ -272,6 +374,21 @@ namespace NcTests {
 			ms.CopyTo(stream);
 
 			Assert.IsTrue(original.Take(5 * 1024).Concat(ms.ToArray()).Concat(original.Skip(5 * 1024 + 5 * 1024)).SequenceEqual(stream.Data));
+		}
+
+		[TestMethod]
+		public void TestStreamSetLength() {
+			int declLength = 12 * 1024;
+			NcByteStream stream = new NcByteStream(NcTestUtils.RandomBytes(declLength));
+			Assert.AreEqual(declLength, stream.Length);
+
+			long lessLength = 5 * 1024;
+			stream.SetLength(lessLength);
+			Assert.AreEqual(lessLength, stream.Length);
+
+			long moreLength = 10 * 1024;
+			stream.SetLength(moreLength);
+			Assert.AreEqual(moreLength, stream.Length);
 		}
 	}
 }
