@@ -703,7 +703,7 @@ namespace NonContig {
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+					current = _first = _last = new NcByteBlock((int)Math.Min(count, BLOCK_SIZE));
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
@@ -719,7 +719,7 @@ namespace NonContig {
 			int i = 0;
 			while (i < count) {
 				// existing blocks can't be resized (except the last block)
-				int size = Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
+				int size = (int)Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
 				Buffer.BlockCopy(src, srcIndex + i, current.Buffer, offset, size);
 				current.UsedCount = offset + size;
 				i += size;

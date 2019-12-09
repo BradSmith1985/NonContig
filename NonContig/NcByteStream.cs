@@ -173,5 +173,20 @@ namespace NonContig {
 			_data.Copy(buffer, offset, Position, count);
 			Position += count;
 		}
+
+		/// <summary>
+		/// Returns an array containing the stream data, regardless of the 
+		/// <see cref="Position"/> property.
+		/// </summary>
+		/// <returns></returns>
+		/// <remarks>
+		/// This method is provided for compatibility with <see cref="MemoryStream"/> only. 
+		/// Use the <see cref="Data"/> property for a non-contiguous representation of the data.
+		/// </remarks>
+		public byte[] ToArray() {
+			byte[] dest = new byte[_data.Count];
+			_data.Copy(0, dest, 0, dest.Length);
+			return dest;
+		}
 	}
 }
