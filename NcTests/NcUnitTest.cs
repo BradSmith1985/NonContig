@@ -305,48 +305,56 @@ namespace NcTests {
 			Assert.IsTrue(data.SequenceEqual(ms.ToArray().Skip(3 * 1024).Take(5 * 1024)));
 		}
 
-		//[TestMethod]
-		//public void TestMemoryNc() {
-		//	LinkedList<NcByteCollection> instances = new LinkedList<NcByteCollection>();
-		//	int count = 0;
-		//	while (true) {
-		//		try {
-		//			NcByteCollection data = new NcByteCollection();
-		//			data.Grow(10 * 1024 * 1024);
-		//			instances.AddLast(data);
-		//			count++;
-		//		}
-		//		catch (OutOfMemoryException) {
-		//			Console.WriteLine("Collections allocated: {0}", count);
-		//			break;
-		//		}
-		//	}
-		//	instances.Clear();
-		//	instances = null;
-		//	GC.Collect();
-		//	GC.WaitForPendingFinalizers();
-		//}
+		/// <summary>
+		/// Tests memory performance by allocating non-contiguous collections until the system runs out of memory. 
+		/// This test takes a long time to complete.
+		/// </summary>
+		[TestMethod]
+		public void TestMemoryNc() {
+			LinkedList<NcByteCollection> instances = new LinkedList<NcByteCollection>();
+			int count = 0;
+			while (true) {
+				try {
+					NcByteCollection data = new NcByteCollection();
+					data.Grow(10 * 1024 * 1024);
+					instances.AddLast(data);
+					count++;
+				}
+				catch (OutOfMemoryException) {
+					Console.WriteLine("Collections allocated: {0}", count);
+					break;
+				}
+			}
+			instances.Clear();
+			instances = null;
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+		}
 
-		//[TestMethod]
-		//public void TestMemoryArrays() {
-		//	LinkedList<byte[]> instances = new LinkedList<byte[]>();
-		//	int count = 0;
-		//	while (true) {
-		//		try {
-		//			byte[] data = new byte[10 * 1024 * 1024];
-		//			instances.AddLast(data);
-		//			count++;
-		//		}
-		//		catch (OutOfMemoryException) {
-		//			Console.WriteLine("Arrays allocated: {0}", count);
-		//			break;
-		//		}
-		//	}
-		//	instances.Clear();
-		//	instances = null;
-		//	GC.Collect();
-		//	GC.WaitForPendingFinalizers();
-		//}
+		/// <summary>
+		/// Tests memory performance by allocating contiguous byte arrays until the system runs out of memory.
+		/// This test can take a long time to complete.
+		/// </summary>
+		[TestMethod]
+		public void TestMemoryArrays() {
+			LinkedList<byte[]> instances = new LinkedList<byte[]>();
+			int count = 0;
+			while (true) {
+				try {
+					byte[] data = new byte[10 * 1024 * 1024];
+					instances.AddLast(data);
+					count++;
+				}
+				catch (OutOfMemoryException) {
+					Console.WriteLine("Arrays allocated: {0}", count);
+					break;
+				}
+			}
+			instances.Clear();
+			instances = null;
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+		}
 	}
 
 	[TestClass]
