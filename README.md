@@ -9,4 +9,5 @@ The class offers several methods for copying data to and from byte arrays, unman
 ## NcByteStream
 A `Stream`-derived class that uses an `NcByteCollection` as its backing store. Designed as a replacement for `MemoryStream` in situations where the length is large or varies greatly.
 
+# External Links
 More information here: https://www.brad-smith.info/blog/archives/954
