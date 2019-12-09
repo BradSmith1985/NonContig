@@ -37,8 +37,9 @@ namespace NonContig {
 	[Serializable]
 	public class NcByteCollection : IList<byte>, ICloneable, ISerializable, IXmlSerializable {
 
-		const int BLOCK_SIZE = 4096;
+		const int DEFAULT_BLOCK_SIZE = 4096;
 
+		readonly int _blockSize;
 		NcByteBlock _first;
 		NcByteBlock _last;
 
@@ -68,7 +69,7 @@ namespace NonContig {
 			/// Initialises a new instance of the <see cref="NcByteBlock"/> class using the specified block size.
 			/// </summary>
 			/// <param name="capacity"></param>
-			public NcByteBlock(int capacity = BLOCK_SIZE) {
+			public NcByteBlock(int capacity = DEFAULT_BLOCK_SIZE) {
 				Buffer = new byte[capacity];
 			}
 		}
@@ -184,16 +185,25 @@ namespace NonContig {
 
 		/// <summary>
 		/// Initialises a new, empty instance of the <see cref="NcByteCollection"/> 
+		/// class using the specified block size.
+		/// </summary>
+		/// <param name="blockSize"></param>
+		public NcByteCollection(int blockSize) {
+			_blockSize = blockSize;
+		}
+
+		/// <summary>
+		/// Initialises a new, empty instance of the <see cref="NcByteCollection"/> 
 		/// class.
 		/// </summary>
-		public NcByteCollection() { }
+		public NcByteCollection() : this(DEFAULT_BLOCK_SIZE) { }
 
 		/// <summary>
 		/// Initialises a new instance of the <see cref="NcByteCollection"/> 
 		/// class, copying the values from an existing collection.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(NcByteCollection data) {
+		public NcByteCollection(NcByteCollection data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			data.CloneRange(0, data.LongCount, this);
 		}
@@ -203,7 +213,7 @@ namespace NonContig {
 		/// class, copying the values from an existing array of bytes.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(byte[] data) {
+		public NcByteCollection(byte[] data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			Add(data);
 		}
@@ -213,7 +223,7 @@ namespace NonContig {
 		/// class, copying the values from an existing sequence of bytes.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(IEnumerable<byte> data) {
+		public NcByteCollection(IEnumerable<byte> data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
 			Add(data);
 		}
@@ -302,11 +312,11 @@ namespace NonContig {
 			while (i < data.Length) {
 				if (_last == null) {
 					// first block (allow smaller block size)
-					_first = _last = new NcByteBlock(size = Math.Min(data.Length, BLOCK_SIZE));
+					_first = _last = new NcByteBlock(size = Math.Min(data.Length, _blockSize));
 				}
 				else if ((size = _last.Buffer.Length - _last.UsedCount) == 0) {
 					// new block needed, becomes the new last node
-					NcByteBlock next = new NcByteBlock(size = BLOCK_SIZE);
+					NcByteBlock next = new NcByteBlock(size = _blockSize);
 					_last.Next = next;
 					next.Prev = _last;
 					_last = next;
@@ -331,11 +341,11 @@ namespace NonContig {
 			while (i < count) {
 				if (_last == null) {
 					// first block (allow smaller block size)
-					_first = _last = new NcByteBlock(size = (int)Math.Min(count, BLOCK_SIZE));
+					_first = _last = new NcByteBlock(size = (int)Math.Min(count, _blockSize));
 				}
 				else if ((size = _last.Buffer.Length - _last.UsedCount) == 0) {
 					// new block needed, becomes the new last node
-					NcByteBlock next = new NcByteBlock(size = BLOCK_SIZE);
+					NcByteBlock next = new NcByteBlock(size = _blockSize);
 					_last.Next = next;
 					next.Prev = _last;
 					_last = next;
@@ -521,7 +531,7 @@ namespace NonContig {
 			if (current == null) {
 				if (index == 0) {
 					// first block (allow smaller block size)
-					current = _first = _last = new NcByteBlock(Math.Min(data.Length, BLOCK_SIZE));
+					current = _first = _last = new NcByteBlock(Math.Min(data.Length, _blockSize));
 				}
 				else if (index == LongCount) {
 					// add onto end
@@ -703,7 +713,7 @@ namespace NonContig {
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock((int)Math.Min(count, BLOCK_SIZE));
+					current = _first = _last = new NcByteBlock((int)Math.Min(count, _blockSize));
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
@@ -782,7 +792,7 @@ namespace NonContig {
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+					current = _first = _last = new NcByteBlock(Math.Min(count, _blockSize));
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
@@ -866,7 +876,7 @@ namespace NonContig {
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock(Math.Min(count, BLOCK_SIZE));
+					current = _first = _last = new NcByteBlock(Math.Min(count, _blockSize));
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
@@ -952,7 +962,7 @@ namespace NonContig {
 		/// </remarks>
 		private void CloneRange(long index, long count, NcByteCollection dest) {
 			if (count > 0) {
-				dest._first = dest._last = new NcByteBlock((int)Math.Min(BLOCK_SIZE, count));
+				dest._first = dest._last = new NcByteBlock((int)Math.Min(_blockSize, count));
 
 				long end = index + count;
 				while (index < end) {
@@ -1086,7 +1096,7 @@ namespace NonContig {
 			long position = 0;
 
 			while (reader.LocalName.Equals("Block") || reader.ReadToFollowing("Block")) {
-				byte[] buffer = new byte[BLOCK_SIZE];
+				byte[] buffer = new byte[_blockSize];
 				int bytesRead = 0;
 				while ((bytesRead = reader.ReadElementContentAsBase64(buffer, 0, buffer.Length)) > 0) {
 					Copy(buffer, 0, position, bytesRead);

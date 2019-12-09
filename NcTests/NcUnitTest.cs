@@ -315,7 +315,7 @@ namespace NcTests {
 			int count = 0;
 			while (true) {
 				try {
-					NcByteCollection data = new NcByteCollection();
+					NcByteCollection data = new NcByteCollection(8 * 4096);
 					data.Grow(10 * 1024 * 1024);
 					instances.AddLast(data);
 					count++;
