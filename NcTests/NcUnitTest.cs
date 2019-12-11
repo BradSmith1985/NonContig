@@ -35,7 +35,7 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(100);
-			instance.Add(data);
+			instance.AddRange(data);
 
 			Assert.IsTrue(instance.SequenceEqual(data));
 		}
@@ -54,7 +54,7 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(100);
-			instance.Add((IEnumerable<byte>)data);
+			instance.AddRange((IEnumerable<byte>)data);
 
 			Assert.IsTrue(instance.SequenceEqual(data));
 		}
@@ -64,7 +64,7 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(5 * 1024);
-			instance.Add(data);
+			instance.AddRange(data);
 
 			Assert.IsTrue(instance.SequenceEqual(data));
 		}
@@ -74,7 +74,7 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(17 * 1024);
-			instance.Add(data);
+			instance.AddRange(data);
 
 			Assert.IsTrue(instance.SequenceEqual(data));
 		}
@@ -85,8 +85,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(100);
 			byte[] inserted = NcTestUtils.RandomBytes(50);
-			instance.Add(initial);
-			instance.Insert(10, inserted);
+			instance.AddRange(initial);
+			instance.InsertRange(10, inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(10).Concat(inserted).Concat(initial.Skip(10))));
 		}
@@ -97,8 +97,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = NcTestUtils.RandomBytes(2 * 1024);
-			instance.Add(initial);
-			instance.Insert(2048, inserted);
+			instance.AddRange(initial);
+			instance.InsertRange(2048, inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(2048).Concat(inserted).Concat(initial.Skip(2048))));
 		}
@@ -109,8 +109,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = NcTestUtils.RandomBytes(10 * 1024);
-			instance.Add(initial);
-			instance.Insert(5120, inserted);
+			instance.AddRange(initial);
+			instance.InsertRange(5120, inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(5120).Concat(inserted).Concat(initial.Skip(5120))));
 		}
@@ -121,8 +121,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = NcTestUtils.RandomBytes(10 * 1024);
-			instance.Add((IEnumerable<byte>)initial);
-			instance.Insert(5120, (IEnumerable<byte>)inserted);
+			instance.AddRange((IEnumerable<byte>)initial);
+			instance.InsertRange(5120, (IEnumerable<byte>)inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(5120).Concat(inserted).Concat(initial.Skip(5120))));
 		}
@@ -133,7 +133,7 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = new byte[] { 127 };
-			instance.Add((IEnumerable<byte>)initial);
+			instance.AddRange((IEnumerable<byte>)initial);
 			instance.Insert(5120, inserted[0]);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(5120).Concat(inserted).Concat(initial.Skip(5120))));
@@ -145,8 +145,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = NcTestUtils.RandomBytes(2 * 1024);
-			instance.Add(initial);
-			instance.Insert(0, inserted);
+			instance.AddRange(initial);
+			instance.InsertRange(0, inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(inserted.Concat(initial)));
 		}
@@ -157,8 +157,8 @@ namespace NcTests {
 
 			byte[] initial = NcTestUtils.RandomBytes(5 * 1024);
 			byte[] inserted = NcTestUtils.RandomBytes(2 * 1024);
-			instance.Add(initial);
-			instance.Insert(initial.Length-1, inserted);
+			instance.AddRange(initial);
+			instance.InsertRange(initial.Length-1, inserted);
 
 			Assert.IsTrue(instance.SequenceEqual(initial.Take(initial.Length - 1).Concat(inserted).Concat(initial.Skip(initial.Length - 1))));
 		}
@@ -168,8 +168,8 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(100);
-			instance.Add(data);
-			instance.Remove(10, 50);
+			instance.AddRange(data);
+			instance.RemoveRange(10, 50);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Take(10).Concat(data.Skip(10+50))));
 		}
@@ -179,8 +179,8 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(5 * 1024);
-			instance.Add(data);
-			instance.Remove(3*1024, 1536);
+			instance.AddRange(data);
+			instance.RemoveRange(3*1024, 1536);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Take(3 * 1024).Concat(data.Skip(3 * 1024 + 1536))));
 		}
@@ -190,8 +190,8 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(12 * 1024);
-			instance.Add(data);
-			instance.Remove(3 * 1024, 5*1024);
+			instance.AddRange(data);
+			instance.RemoveRange(3 * 1024, 5*1024);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Take(3 * 1024).Concat(data.Skip(3 * 1024 + 5 * 1024))));
 		}
@@ -201,7 +201,7 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(12 * 1024);
-			instance.Add(data);
+			instance.AddRange(data);
 			instance.RemoveAt(3 * 1024);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Take(3 * 1024).Concat(data.Skip(3 * 1024 + 1))));
@@ -212,8 +212,8 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(12 * 1024);
-			instance.Add(data);
-			instance.Remove(0, 5 * 1024);
+			instance.AddRange(data);
+			instance.RemoveRange(0, 5 * 1024);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Skip(5 * 1024)));
 		}
@@ -223,8 +223,8 @@ namespace NcTests {
 			NcByteCollection instance = new NcByteCollection();
 
 			byte[] data = NcTestUtils.RandomBytes(12 * 1024);
-			instance.Add(data);
-			instance.Remove(7 * 1024, 5 * 1024);
+			instance.AddRange(data);
+			instance.RemoveRange(7 * 1024, 5 * 1024);
 
 			Assert.IsTrue(instance.SequenceEqual(data.Take(7 * 1024)));
 		}
@@ -241,11 +241,11 @@ namespace NcTests {
 		public void TestCompact() {
 			NcByteCollection data = new NcByteCollection(NcTestUtils.RandomBytes(12 * 1024));
 
-			data.Remove(3 * 1024, 100);
-			data.Insert(2 * 1024, NcTestUtils.RandomBytes(200));
-			data.Remove(5 * 1024, 5 * 1024);
-			data.Insert(6 * 1024, NcTestUtils.RandomBytes(5 * 1024));
-			data.Remove(7 * 1024, 3 * 1024);
+			data.RemoveRange(3 * 1024, 100);
+			data.InsertRange(2 * 1024, NcTestUtils.RandomBytes(200));
+			data.RemoveRange(5 * 1024, 5 * 1024);
+			data.InsertRange(6 * 1024, NcTestUtils.RandomBytes(5 * 1024));
+			data.RemoveRange(7 * 1024, 3 * 1024);
 #if DEBUG
 			long oldBytes = data.BlockLengthTotal;
 			Console.WriteLine("Used bytes: {0}, Total bytes: {1}, Blocks: {2}", data.LongCount, data.BlockLengthTotal, data.BlockCount);
@@ -355,6 +355,17 @@ namespace NcTests {
 			GC.Collect();
 			GC.WaitForPendingFinalizers();
 		}
+
+#if DEBUG
+		[TestMethod]
+		public void TestReserve() {
+			NcByteCollection instance = new NcByteCollection();
+			long bytes = 11 * 1024;
+			instance.Reserve(bytes);
+
+			Assert.AreEqual(instance.BlockLengthTotal, bytes);
+		}
+#endif
 	}
 
 	[TestClass]

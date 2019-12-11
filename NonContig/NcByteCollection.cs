@@ -19,7 +19,7 @@ namespace NonContig {
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// This type implements <see cref="IList{byte}"/> to allow both sequential 
+	/// This type implements <see cref="IList{Byte}"/> to allow both sequential 
 	/// and random access to individual bytes. Additional methods allow adding, 
 	/// inserting and removing sequences of bytes.
 	/// </para>
@@ -37,7 +37,7 @@ namespace NonContig {
 	[Serializable]
 	public class NcByteCollection : IList<byte>, ICloneable, ISerializable, IXmlSerializable {
 
-		const int DEFAULT_BLOCK_SIZE = 4096;
+		internal const int DEFAULT_BLOCK_SIZE = 4096;
 
 		readonly int _blockSize;
 		NcByteBlock _first;
@@ -68,9 +68,9 @@ namespace NonContig {
 			/// <summary>
 			/// Initialises a new instance of the <see cref="NcByteBlock"/> class using the specified block size.
 			/// </summary>
-			/// <param name="capacity"></param>
-			public NcByteBlock(int capacity = DEFAULT_BLOCK_SIZE) {
-				Buffer = new byte[capacity];
+			/// <param name="length"></param>
+			public NcByteBlock(int length) {
+				Buffer = new byte[length];
 			}
 		}
 
@@ -203,9 +203,13 @@ namespace NonContig {
 		/// class, copying the values from an existing collection.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(NcByteCollection data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
+		/// <remarks>
+		/// This constructor allocates exactly the number of bytes required to hold the source data.
+		/// </remarks>
+		public NcByteCollection(NcByteCollection data, int? blockSize = null) : this(blockSize ?? GetAutoBlockSize(data)) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			data.CloneRange(0, data.LongCount, this);
+			Reserve(data.LongCount);
+			AddRange(data);
 		}
 
 		/// <summary>
@@ -213,9 +217,13 @@ namespace NonContig {
 		/// class, copying the values from an existing array of bytes.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(byte[] data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
+		/// <remarks>
+		/// This constructor allocates exactly the number of bytes required to hold the source data.
+		/// </remarks>
+		public NcByteCollection(byte[] data, int? blockSize = null) : this(blockSize ?? GetAutoBlockSize(data)) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			Add(data);
+			Reserve(data.LongLength);
+			AddRange(data);
 		}
 
 		/// <summary>
@@ -223,9 +231,16 @@ namespace NonContig {
 		/// class, copying the values from an existing sequence of bytes.
 		/// </summary>
 		/// <param name="data"></param>
-		public NcByteCollection(IEnumerable<byte> data, int blockSize = DEFAULT_BLOCK_SIZE) : this(blockSize) {
+		/// <remarks>
+		/// If <paramref name="data"/> implements <see cref="ICollection{Byte}"/> 
+		/// then this constructor allocates exactly the number of bytes 
+		/// required to hold the source data.
+		/// </remarks>
+		public NcByteCollection(IEnumerable<byte> data, int? blockSize = null) : this(blockSize ?? GetAutoBlockSize(data)) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			Add(data);
+			var maybeCollection = data as ICollection<byte>;
+			if (maybeCollection != null) Reserve(maybeCollection.Count);
+			AddRange(data);
 		}
 
 		/// <summary>
@@ -233,7 +248,7 @@ namespace NonContig {
 		/// </summary>
 		/// <param name="info"></param>
 		/// <param name="context"></param>
-		protected NcByteCollection(SerializationInfo info, StreamingContext context) {
+		protected NcByteCollection(SerializationInfo info, StreamingContext context) : this() {
 			int blockCount = info.GetInt32("Count");
 			long position = 0;
 
@@ -243,6 +258,23 @@ namespace NonContig {
 				Copy(value, 0, position, value.Length);
 				position += value.Length;
 			}
+		}
+
+		/// <summary>
+		/// Calculates an optimal block size based on the size of the specified data.
+		/// </summary>
+		/// <param name="data"></param>
+		/// <returns></returns>
+		/// <remarks>
+		/// This method selects a block size between 4KB and 32KB depending on the length of the data.
+		/// </remarks>
+		private static int GetAutoBlockSize(IEnumerable<byte> data) {
+			var maybeCollection = data as ICollection<byte>;
+			if (maybeCollection != null) {
+				return Math.Max(1, Math.Min(8, maybeCollection.Count / (DEFAULT_BLOCK_SIZE * 2))) * DEFAULT_BLOCK_SIZE;
+			}
+
+			return DEFAULT_BLOCK_SIZE;
 		}
 
 		/// <summary>
@@ -272,33 +304,83 @@ namespace NonContig {
 		}
 
 		/// <summary>
+		/// Returns the first block in which new data can be added, or null if 
+		/// there are no blocks or the last block is full.
+		/// </summary>
+		/// <returns></returns>
+		private NcByteBlock NextBlock() {
+			NcByteBlock current = _last;
+			while (current != null) {
+				if ((current.UsedCount > 0) || (current.Prev == null)) {
+					if (current.UsedCount >= current.Buffer.Length) current = current.Next;
+					break;
+				}
+				current = current.Prev;
+			}
+			
+			return current;
+		}
+
+		/// <summary>
+		/// Returns the first block in which new data can be added (and updates 
+		/// <paramref name="offset"/>), or null if there are no blocks or the 
+		/// last block is full.
+		/// </summary>
+		/// <param name="offset"></param>
+		/// <returns></returns>
+		private NcByteBlock NextBlock(ref int offset) {
+			NcByteBlock next = NextBlock();
+			if (next != null) offset = next.UsedCount;
+			return next;
+		}
+
+		/// <summary>
 		/// Adds a single byte to the end of the collection.
 		/// </summary>
 		/// <param name="item"></param>
 		public void Add(byte item) {
-			if (_last == null) {
-				// first block
-				_first = _last = new NcByteBlock();
-			}
-			else if (_last.UsedCount >= _last.Buffer.Length) {
-				// new block needed, becomes the new last node
-				NcByteBlock next = new NcByteBlock();
-				_last.Next = next;
-				next.Prev = _last;
-				_last = next;
+			int offset = 0;
+			NcByteBlock current = NextBlock(ref offset);
+			if (current == null) {
+				if (_last == null) {
+					// first block
+					current = _first = _last = new NcByteBlock(_blockSize);
+				}
+				else {
+					// subsequent blocks
+					current = new NcByteBlock(_blockSize);
+					_last.Next = current;
+					current.Prev = _last;
+					_last = current;
+				}				
 			}
 
-			_last.Buffer[_last.UsedCount] = item;
-			_last.UsedCount++;
+			current.Buffer[offset] = item;
+			current.UsedCount++;
 		}
 
 		/// <summary>
 		/// Adds a sequence of bytes to the end of the collection.
 		/// </summary>
 		/// <param name="data"></param>
-		public void Add(IEnumerable<byte> data) {
+		public void AddRange(IEnumerable<byte> data) {
 			foreach (byte b in data) {
 				Add(b);
+			}
+		}
+
+		/// <summary>
+		/// Adds the contents of another <see cref="NcByteCollection"/> to the end of the collection.
+		/// </summary>
+		/// <param name="other"></param>
+		public void AddRange(NcByteCollection other) {
+			NcByteBlock current = other._first;
+			long i = LongCount;
+
+			while (current != null) {
+				Copy(current.Buffer, 0, i, current.UsedCount);
+				i += current.UsedCount;
+				current = current.Next;
 			}
 		}
 
@@ -306,27 +388,8 @@ namespace NonContig {
 		/// Adds an array of bytes to the end of the collection.
 		/// </summary>
 		/// <param name="data"></param>
-		public void Add(byte[] data) {
-			int i = 0;
-			int size;
-			while (i < data.Length) {
-				if (_last == null) {
-					// first block (allow smaller block size)
-					_first = _last = new NcByteBlock(size = Math.Min(data.Length, _blockSize));
-				}
-				else if ((size = _last.Buffer.Length - _last.UsedCount) == 0) {
-					// new block needed, becomes the new last node
-					NcByteBlock next = new NcByteBlock(size = _blockSize);
-					_last.Next = next;
-					next.Prev = _last;
-					_last = next;
-				}
-
-				int count = Math.Min(size, data.Length - i);
-				Buffer.BlockCopy(data, i, _last.Buffer, _last.UsedCount, count);
-				_last.UsedCount += count;
-				i += count;
-			}
+		public void AddRange(byte[] data) {
+			Copy(data, 0, LongCount, data.Length);
 		}
 
 		/// <summary>
@@ -354,6 +417,36 @@ namespace NonContig {
 				size = (int)Math.Min(size, count - i);
 				_last.UsedCount += size;
 				i += size;
+			}
+		}
+
+		/// <summary>
+		/// Reserves the specified number of additional bytes for the collection.
+		/// </summary>
+		/// <param name="count"></param>
+		/// <remarks>
+		/// This method allocates exactly the number of bytes requested and therefore 
+		/// should not be called frequently with only small increments in size.
+		/// </remarks>
+		public void Reserve(long count) {
+			long i = 0;
+
+			while (i < count) {
+				if (_last == null) {
+					// first block
+					_first = _last = new NcByteBlock((int)Math.Min(count, _blockSize));
+				}
+				else {
+					i += _last.Buffer.Length;
+
+					if (i < count) {
+						// next block needed
+						NcByteBlock next = new NcByteBlock((int)Math.Min(count - i, _blockSize));
+						_last.Next = next;
+						next.Prev = _last;
+						_last = next;
+					}
+				}
 			}
 		}
 
@@ -435,7 +528,7 @@ namespace NonContig {
 			if (current == null) {
 				if (index == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock();
+					current = _first = _last = new NcByteBlock(_blockSize);
 				}
 				else if (index == LongCount) {
 					// add onto end
@@ -459,7 +552,7 @@ namespace NonContig {
 			}
 			else {
 				// insert block
-				NcByteBlock next = new NcByteBlock();
+				NcByteBlock next = new NcByteBlock(_blockSize);
 				InsertBlockBefore(current, next);
 				current = next;
 			}
@@ -476,18 +569,18 @@ namespace NonContig {
 		/// </summary>
 		/// <param name="index"></param>
 		/// <param name="data"></param>
-		public void Insert(long index, IEnumerable<byte> data) {
+		public void InsertRange(long index, IEnumerable<byte> data) {
 			int offset;
 			NcByteBlock current = BlockAt(index, out offset);
 
 			if (current == null) {
 				if (index == 0) {
 					// first block
-					current = _first = _last = new NcByteBlock();
+					current = _first = _last = new NcByteBlock(_blockSize);
 				}
 				else if (index == LongCount) {
 					// add onto end
-					Add(data);
+					AddRange(data);
 					return;
 				}
 				else {
@@ -507,7 +600,7 @@ namespace NonContig {
 			}
 			else {
 				// insert block
-				NcByteBlock next = new NcByteBlock();
+				NcByteBlock next = new NcByteBlock(_blockSize);
 				InsertBlockBefore(current, next);
 				current = next;
 			}
@@ -524,7 +617,7 @@ namespace NonContig {
 		/// </summary>
 		/// <param name="index"></param>
 		/// <param name="data"></param>
-		public void Insert(long index, byte[] data) {
+		public void InsertRange(long index, byte[] data) {
 			int offset;
 			NcByteBlock current = BlockAt(index, out offset);
 
@@ -535,7 +628,7 @@ namespace NonContig {
 				}
 				else if (index == LongCount) {
 					// add onto end
-					Add(data);
+					AddRange(data);
 					return;
 				}
 				else {
@@ -555,7 +648,7 @@ namespace NonContig {
 			}
 			else {
 				// insert block
-				NcByteBlock next = new NcByteBlock();
+				NcByteBlock next = new NcByteBlock(_blockSize);
 				InsertBlockBefore(current, next);
 				current = next;
 			}
@@ -604,7 +697,7 @@ namespace NonContig {
 
 				if (i < length) {
 					// insert next block
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(_blockSize);
 					InsertBlockAfter(current, next);
 					current = next;
 					offset = 0;
@@ -623,7 +716,7 @@ namespace NonContig {
 
 				if (i < data.Length) {
 					// insert next block
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(_blockSize);
 					InsertBlockAfter(current, next);
 					current = next;
 					offset = 0;
@@ -650,7 +743,7 @@ namespace NonContig {
 		/// </summary>
 		/// <param name="index"></param>
 		public void RemoveAt(long index) {
-			Remove(index, 1);
+			RemoveRange(index, 1);
 		}
 
 		/// <summary>
@@ -658,7 +751,7 @@ namespace NonContig {
 		/// </summary>
 		/// <param name="index"></param>
 		/// <param name="count"></param>
-		public void Remove(long index, long count) {
+		public void RemoveRange(long index, long count) {
 			int startOffset;
 			NcByteBlock start = BlockAt(index, out startOffset);
 			if (start == null) throw new IndexOutOfRangeException();
@@ -709,17 +802,18 @@ namespace NonContig {
 		/// </remarks>
 		public void Copy(byte[] src, int srcIndex, long destIndex, int count) {
 			int offset;
-			NcByteBlock current = BlockAt(destIndex, out offset);
+			NcByteBlock current = BlockAt(destIndex, out offset) ?? NextBlock(ref offset);
 			if (current == null) {
-				if (destIndex == 0) {
+				if ((destIndex == 0) && (_last == null)) {
 					// first block
 					current = _first = _last = new NcByteBlock((int)Math.Min(count, _blockSize));
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
-					current = new NcByteBlock();
-					current.Prev = _last;
+					current = new NcByteBlock(_blockSize);
 					_last.Next = current;
+					current.Prev = _last;
+					_last = current;
 				}
 				else {
 					throw new IndexOutOfRangeException();
@@ -729,14 +823,15 @@ namespace NonContig {
 			int i = 0;
 			while (i < count) {
 				// existing blocks can't be resized (except the last block)
-				int size = (int)Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
+				bool canResize = (current.Next == null) || (current == NextBlock());
+				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
 				Buffer.BlockCopy(src, srcIndex + i, current.Buffer, offset, size);
 				current.UsedCount = offset + size;
 				i += size;
 
-				if (current.Next == null) {
+				if ((current.Next == null) && (i < count)) {
 					// additional block needed
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(_blockSize);
 					current.Next = next;
 					next.Prev = current;
 					_last = next;
@@ -788,7 +883,7 @@ namespace NonContig {
 		/// <param name="count"></param>
 		public void Copy(IntPtr src, long destIndex, int count) {
 			int offset;
-			NcByteBlock current = BlockAt(destIndex, out offset);
+			NcByteBlock current = BlockAt(destIndex, out offset) ?? NextBlock(ref offset);
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
@@ -796,9 +891,10 @@ namespace NonContig {
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
-					current = new NcByteBlock();
-					current.Prev = _last;
+					current = new NcByteBlock(_blockSize);
 					_last.Next = current;
+					current.Prev = _last;
+					_last = current;
 				}
 				else {
 					throw new IndexOutOfRangeException();
@@ -808,14 +904,15 @@ namespace NonContig {
 			int i = 0;
 			while (i < count) {
 				// existing blocks can't be resized (except the last block)
-				int size = Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
+				bool canResize = (current.Next == null) || (current == NextBlock());
+				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
 				Marshal.Copy(src + i, current.Buffer, offset, size);
 				current.UsedCount = offset + size;
 				i += size;
 
-				if (current.Next == null) {
+				if ((current.Next == null) && (i < count)) {
 					// additional block needed
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(_blockSize);
 					current.Next = next;
 					next.Prev = current;
 					_last = next;
@@ -872,7 +969,7 @@ namespace NonContig {
 		/// </remarks>
 		public int Copy(Stream src, long destIndex, int count) {
 			int offset;
-			NcByteBlock current = BlockAt(destIndex, out offset);
+			NcByteBlock current = BlockAt(destIndex, out offset) ?? NextBlock(ref offset);
 			if (current == null) {
 				if (destIndex == 0) {
 					// first block
@@ -880,9 +977,10 @@ namespace NonContig {
 				}
 				else if (destIndex == LongCount) {
 					// subsequent blocks
-					current = new NcByteBlock();
-					current.Prev = _last;
+					current = new NcByteBlock(_blockSize);
 					_last.Next = current;
+					current.Prev = _last;
+					_last = current;
 				}
 				else {
 					throw new IndexOutOfRangeException();
@@ -892,16 +990,17 @@ namespace NonContig {
 			int i = 0;
 			while (i < count) {
 				// existing blocks can't be resized (except the last block)
-				int size = Math.Min(count - i, ((current.Next != null) ? current.UsedCount : current.Buffer.Length) - offset);
+				bool canResize = (current.Next == null) || (current == NextBlock());
+				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
 				int actual = src.Read(current.Buffer, offset, size);
 				current.UsedCount = offset + actual;
 				i += actual;
 
 				if (actual < size) break;
 
-				if (current.Next == null) {
+				if ((current.Next == null) && (i < count)) {
 					// additional block needed
-					NcByteBlock next = new NcByteBlock();
+					NcByteBlock next = new NcByteBlock(_blockSize);
 					current.Next = next;
 					next.Prev = current;
 					_last = next;
@@ -937,7 +1036,6 @@ namespace NonContig {
 
 			int i = 0;
 			while (i < count) {
-				// existing blocks can't be resized (except the last block)
 				int size = Math.Min(count - i, current.UsedCount - offset);
 				dest.Write(current.Buffer, offset, size);
 				i += size;
@@ -949,6 +1047,19 @@ namespace NonContig {
 			}
 
 			return i;
+		}
+
+		/// <summary>
+		/// Writes the entire collection to the specified <see cref="BinaryWriter"/>.
+		/// </summary>
+		/// <param name="dest"></param>
+		public void WriteTo(BinaryWriter dest) {
+			NcByteBlock current = _first;
+
+			while (current != null) {
+				dest.Write(current.Buffer, 0, current.UsedCount);
+				current = current.Next;
+			}
 		}
 
 		/// <summary>
@@ -974,7 +1085,7 @@ namespace NonContig {
 
 					if (index < end) {
 						// additional block required
-						NcByteBlock next = new NcByteBlock();
+						NcByteBlock next = new NcByteBlock(_blockSize);
 						dest._last.Next = next;
 						next.Prev = dest._last;
 						dest._last = next;
@@ -1056,6 +1167,19 @@ namespace NonContig {
 		}
 
 		/// <summary>
+		/// Copies the data in the collection into a byte array.
+		/// </summary>
+		/// <returns></returns>
+		/// <remarks>
+		/// Included for compatibility with APIs that require contiguously-allocated memory.
+		/// </remarks>
+		public byte[] ToArray() {
+			byte[] dest = new byte[Count];
+			Copy(0, dest, 0, dest.Length);
+			return dest;
+		}
+
+		/// <summary>
 		/// Populates a <see cref="SerializationInfo"/> with the data needed to 
 		/// serialize the object.
 		/// </summary>
@@ -1102,8 +1226,8 @@ namespace NonContig {
 					Copy(buffer, 0, position, bytesRead);
 					position += bytesRead;
 				}
-			}			
-		}		
+			}
+		}
 
 		void IXmlSerializable.ReadXml(XmlReader reader) {
 			ReadXml(reader);
@@ -1131,5 +1255,5 @@ namespace NonContig {
 		void IXmlSerializable.WriteXml(XmlWriter writer) {
 			WriteXml(writer);
 		}
-	}	
+	}
 }

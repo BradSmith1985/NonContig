@@ -57,6 +57,14 @@ namespace NonContig {
 
 		/// <summary>
 		/// Initialises a new instance of the <see cref="NcByteStream"/> class 
+		/// using the specified block size.
+		/// </summary>
+		public NcByteStream(int blockSize) {
+			_data = new NcByteCollection(blockSize);
+		}
+
+		/// <summary>
+		/// Initialises a new instance of the <see cref="NcByteStream"/> class 
 		/// using the specified <see cref="NcByteCollection"/> as a backing 
 		/// store.
 		/// </summary>
@@ -76,13 +84,14 @@ namespace NonContig {
 		/// initially populated with the specified array of bytes.
 		/// </summary>
 		/// <param name="data"></param>
+		/// <param name="blockSize"></param>
 		/// <remarks>
 		/// An instance initialised with this constructor will not modify the 
 		/// original data.
 		/// </remarks>
-		public NcByteStream(byte[] data) {
+		public NcByteStream(byte[] data, int blockSize = NcByteCollection.DEFAULT_BLOCK_SIZE) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			_data = new NcByteCollection(data);
+			_data = new NcByteCollection(data, blockSize);
 		}
 
 		/// <summary>
@@ -90,13 +99,14 @@ namespace NonContig {
 		/// initially populated with the specified sequence of bytes.
 		/// </summary>
 		/// <param name="data"></param>
+		/// <param name="blockSize"></param>
 		/// <remarks>
 		/// An instance initialised with this constructor will not modify the 
 		/// original data.
 		/// </remarks>
-		public NcByteStream(IEnumerable<byte> data) {
+		public NcByteStream(IEnumerable<byte> data, int blockSize = NcByteCollection.DEFAULT_BLOCK_SIZE) {
 			if (data == null) throw new ArgumentNullException(nameof(data));
-			_data = new NcByteCollection(data);
+			_data = new NcByteCollection(data, blockSize);
 		}
 
 		/// <summary>
@@ -155,7 +165,7 @@ namespace NonContig {
 
 			if (diff > 0) {
 				// truncate end
-				_data.Remove(value, diff);
+				_data.RemoveRange(value, diff);
 			}
 			else if (diff < 0) {
 				// pad end
