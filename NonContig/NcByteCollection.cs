@@ -317,7 +317,7 @@ namespace NonContig {
 				}
 				current = current.Prev;
 			}
-			
+
 			return current;
 		}
 
@@ -352,7 +352,7 @@ namespace NonContig {
 					_last.Next = current;
 					current.Prev = _last;
 					_last = current;
-				}				
+				}
 			}
 
 			current.Buffer[offset] = item;
@@ -992,11 +992,18 @@ namespace NonContig {
 				// existing blocks can't be resized (except the last block)
 				bool canResize = (current.Next == null) || (current == NextBlock());
 				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
-				int actual = src.Read(current.Buffer, offset, size);
-				current.UsedCount = offset + actual;
-				i += actual;
 
-				if (actual < size) break;
+				int actual;
+				int remaining = size;
+				do {
+					// keep reading from source stream until we get the requested number of bytes or we hit the end of the stream
+					actual = src.Read(current.Buffer, offset, remaining);
+					offset += actual;
+					i += actual;
+					remaining -= actual;
+					current.UsedCount = offset;
+				}
+				while ((actual > 0) && (actual < remaining));
 
 				if ((current.Next == null) && (i < count)) {
 					// additional block needed

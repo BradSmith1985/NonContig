@@ -20,6 +20,8 @@ namespace NonContig {
 	public class NcByteStream : Stream {
 
 		NcByteCollection _data;
+		long _position;
+		readonly object syncLock = new object();
 
 		/// <summary>
 		/// This property is always true.
@@ -36,11 +38,28 @@ namespace NonContig {
 		/// <summary>
 		/// Gets the length of the stream.
 		/// </summary>
-		public override long Length => _data.LongCount;
+		public override long Length {
+			get {
+				lock (syncLock) {
+					return _data.LongCount;
+				}
+			}
+		}
 		/// <summary>
 		/// Gets the current position in the stream.
 		/// </summary>
-		public override long Position { get; set; }
+		public override long Position {
+			get {
+				lock (syncLock) {
+					return _position;
+				}
+			}
+			set {
+				lock (syncLock) {
+					_position = value;
+				}
+			}
+		}
 		/// <summary>
 		/// Gets the <see cref="NcByteCollection"/> that is used as a backing 
 		/// store for the stream.
@@ -161,15 +180,17 @@ namespace NonContig {
 		/// elements are added to the end of the collection.
 		/// </remarks>
 		public override void SetLength(long value) {
-			long diff = _data.LongCount - value;
+			lock (syncLock) {
+				long diff = _data.LongCount - value;
 
-			if (diff > 0) {
-				// truncate end
-				_data.RemoveRange(value, diff);
-			}
-			else if (diff < 0) {
-				// pad end
-				_data.Grow(-diff);
+				if (diff > 0) {
+					// truncate end
+					_data.RemoveRange(value, diff);
+				}
+				else if (diff < 0) {
+					// pad end
+					_data.Grow(-diff);
+				}
 			}
 		}
 
@@ -197,6 +218,23 @@ namespace NonContig {
 			byte[] dest = new byte[_data.Count];
 			_data.Copy(0, dest, 0, dest.Length);
 			return dest;
+		}
+
+		public override int ReadByte() {
+			return _data[Position++];
+		}
+
+		public override void WriteByte(byte value) {
+			lock (syncLock) {
+				long diff = (Position + 1) - _data.LongCount;
+
+				if (diff > 0) {
+					// pad end
+					_data.Grow(diff);
+				}
+			}
+
+			_data[Position++] = value;
 		}
 	}
 }
