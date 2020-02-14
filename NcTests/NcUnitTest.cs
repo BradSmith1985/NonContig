@@ -12,14 +12,15 @@ namespace NcTests {
 
 	internal static class NcTestUtils {
 
+		static Random rnd = new Random();
+
 		/// <summary>
 		/// Returns an array of the specified length containing random bytes.
 		/// </summary>
 		/// <param name="count"></param>
 		/// <returns></returns>
 		public static byte[] RandomBytes(int count) {
-			byte[] data = new byte[count];
-			Random rnd = new Random();
+			byte[] data = new byte[count];			
 			for (int i = 0; i < data.Length; i++) {
 				data[i] = (byte)rnd.Next(256);
 			}
@@ -354,6 +355,23 @@ namespace NcTests {
 			instances = null;
 			GC.Collect();
 			GC.WaitForPendingFinalizers();
+		}
+
+		[TestMethod]
+		public void TestSequenceEquals_True() {
+			byte[] data = NcTestUtils.RandomBytes(30 * 1000);
+			NcByteCollection b1 = new NcByteCollection(data, 4096);
+			NcByteCollection b2 = new NcByteCollection(data, 3000);
+
+			Assert.IsTrue(b1.SequenceEqual(b2));
+		}
+
+		[TestMethod]
+		public void TestSequenceEquals_False() {
+			NcByteCollection b1 = new NcByteCollection(NcTestUtils.RandomBytes(30 * 1000));
+			NcByteCollection b2 = new NcByteCollection(NcTestUtils.RandomBytes(30 * 1000));
+
+			Assert.IsFalse(b1.SequenceEqual(b2));
 		}
 
 #if DEBUG

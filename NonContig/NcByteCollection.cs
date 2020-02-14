@@ -38,6 +38,30 @@ namespace NonContig {
 	public class NcByteCollection : IList<byte>, ICloneable, ISerializable, IXmlSerializable {
 
 		internal const int DEFAULT_BLOCK_SIZE = 4096;
+		static bool? _isMemCmpSupported;
+
+		/// <summary>
+		/// Gets a value indicating whether <see cref="NativeMethods.memcmp"/> is supported.
+		/// </summary>
+		/// <returns></returns>
+		/// <remarks>
+		/// Since the function is part of the C runtime library, the required DLL may 
+		/// not be installed or supported on the current platform.
+		/// </remarks>
+		private static bool IsMemCmpSupported {
+			get {
+				if (!_isMemCmpSupported.HasValue) {
+					_isMemCmpSupported = false;
+					try {
+						Marshal.PrelinkAll(typeof(NativeMethods));
+						_isMemCmpSupported = true;
+					}
+					catch { }
+				}
+
+				return _isMemCmpSupported.Value;
+			}
+		}
 
 		readonly int _blockSize;
 		NcByteBlock _first;
@@ -1261,6 +1285,168 @@ namespace NonContig {
 
 		void IXmlSerializable.WriteXml(XmlWriter writer) {
 			WriteXml(writer);
+		}
+
+		/// <summary>
+		/// Native methods used by <see cref="SequenceEqual"/>.
+		/// </summary>
+		private static class NativeMethods {
+
+			/// <summary>
+			/// Compares bytes in two buffers.
+			/// </summary>
+			/// <param name="buffer1"></param>
+			/// <param name="buffer2"></param>
+			/// <param name="count"></param>
+			/// <returns>Indicates the relationship between the buffers. 0 means buffer1 identical to buffer2.</returns>
+			[DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+			public static extern int memcmp(IntPtr buffer1, IntPtr buffer2, IntPtr count);
+		}
+
+		/// <summary>
+		/// Determines whether two subarrays of bytes are equal.
+		/// </summary>
+		/// <param name="range1"></param>
+		/// <param name="offset1"></param>
+		/// <param name="range2"></param>
+		/// <param name="offset2"></param>
+		/// <param name="count"></param>
+		/// <returns></returns>
+		/// <remarks>
+		/// Working backwards lets the compiler optimize away bound checking after the first loop.
+		/// </remarks>
+		private static bool Compare(byte[] range1, int offset1, byte[] range2, int offset2, int count) {
+			for (int i = count - 1; i >= 0; --i) {
+				if (range1[offset1 + i] != range2[offset2 + i]) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		/// <summary>
+		/// Determines whether the contents of two collections of bytes are equal.
+		/// </summary>
+		/// <param name="that"></param>
+		/// <returns></returns>
+		/// <remarks>
+		/// <para>
+		/// This is a performance-optimised replacement for <see cref="Enumerable.SequenceEqual"/>. 
+		/// It uses the native <see href="https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/memcmp-wmemcmp">memcmp</see> 
+		/// function from the C runtime library, falling back to managed code if not supported.
+		/// </para>
+		/// </remarks>
+		public bool SequenceEqual(NcByteCollection that) {
+			long total = this.LongCount;
+			long pos = 0;
+
+			// different lengths
+			if (total != that.LongCount) return false;
+
+			// both empty
+			if (total == 0) return true;
+
+			if (IsMemCmpSupported) {
+				// memcmp version
+				NcByteBlock bX = this._first;
+				int iX = 0;
+				GCHandle? gX = GCHandle.Alloc(bX.Buffer, GCHandleType.Pinned);
+
+				NcByteBlock bY = that._first;
+				int iY = 0;
+				GCHandle? gY = GCHandle.Alloc(bY.Buffer, GCHandleType.Pinned);
+
+				try {
+					while (pos < total) {
+						// compare largest subarray
+						int sX = bX.UsedCount - iX;
+						int sY = bY.UsedCount - iY;
+						int s = Math.Min(sX, sY);
+
+						int cmp = NativeMethods.memcmp(
+							Marshal.UnsafeAddrOfPinnedArrayElement(bX.Buffer, iX),
+							Marshal.UnsafeAddrOfPinnedArrayElement(bY.Buffer, iY),
+							new IntPtr(s)
+						);
+
+						if (cmp == 0) {
+							// memory equal, continue
+							pos += s;
+
+							iX += s;
+							if (iX >= bX.UsedCount) {
+								// move to next block in X
+								iX = 0;
+								bX = bX.Next;
+								gX.Value.Free();
+								gX = null;
+								if (bX != null) gX = GCHandle.Alloc(bX.Buffer, GCHandleType.Pinned);
+							}
+
+							iY += s;
+							if (iY >= bY.UsedCount) {
+								// move to next block in Y
+								iY = 0;
+								bY = bY.Next;
+								gY.Value.Free();
+								gY = null;
+								if (bY != null) gY = GCHandle.Alloc(bY.Buffer, GCHandleType.Pinned);
+							}
+						}
+						else {
+							return false;
+						}
+					}
+				}
+				finally {
+					if (gX.HasValue) gX.Value.Free();
+					if (gY.HasValue) gY.Value.Free();
+				}
+
+				// reached the end without encountering inequality
+				return true;
+			}
+			else {
+				// span version
+				NcByteBlock bX = this._first;
+				int iX = 0;
+
+				NcByteBlock bY = that._first;
+				int iY = 0;
+
+				while (pos < total) {
+					// compare largest subarray
+					int sX = bX.UsedCount - iX;
+					int sY = bY.UsedCount - iY;
+					int s = Math.Min(sX, sY);
+
+					if (Compare(bX.Buffer, iX, bY.Buffer, iY, s)) {
+						// memory equal, continue
+						pos += s;
+
+						iX += s;
+						if (iX >= bX.UsedCount) {
+							// move to next block in X
+							iX = 0;
+							bX = bX.Next;
+						}
+
+						iY += s;
+						if (iY >= bY.UsedCount) {
+							// move to next block in Y
+							iY = 0;
+							bY = bY.Next;
+						}
+					}
+					else {
+						return false;
+					}
+				}			
+
+				// reached the end without encountering inequality
+				return true;
+			}
 		}
 	}
 }

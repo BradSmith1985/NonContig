@@ -14,8 +14,15 @@ namespace NonContig {
 	/// non-contiguous collection of bytes as its backing store.
 	/// </summary>
 	/// <remarks>
+	/// <para>
+	/// This is essentially just a wrapper around <see cref="NcByteCollection"/> 
+	/// which exposes stream functionality. If initialised using an existing 
+	/// instance, its overheads are negligible.
+	/// </para>
+	/// <para>
 	/// Although this class implements <see cref="IDisposable"/>, it does not 
 	/// use any unmanaged resources and does not require explicit closure.
+	/// </para>
 	/// </remarks>
 	public class NcByteStream : Stream {
 
@@ -220,10 +227,20 @@ namespace NonContig {
 			return dest;
 		}
 
+		/// <summary>
+		/// Reads a byte from the stream and advances the position within the stream by one
+		/// byte, or returns -1 if at the end of the stream.
+		/// </summary>
+		/// <returns></returns>
 		public override int ReadByte() {
 			return _data[Position++];
 		}
 
+		/// <summary>
+		/// Writes a byte to the current position in the stream and advances the position
+		/// within the stream by one byte.
+		/// </summary>
+		/// <param name="value"></param>
 		public override void WriteByte(byte value) {
 			lock (syncLock) {
 				long diff = (Position + 1) - _data.LongCount;
