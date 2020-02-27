@@ -207,7 +207,14 @@ namespace NonContig {
 		/// <param name="buffer"></param>
 		/// <param name="offset"></param>
 		/// <param name="count"></param>
+		/// <remarks>
+		/// If <see cref="Position"/> is beyond the end of the stream when writing 
+		/// commences, the collection grows automatically. Any data between the old 
+		/// and new ends of the collection is undefined.
+		/// </remarks>
 		public override void Write(byte[] buffer, int offset, int count) {
+			long diff = (Position + count) - _data.Count;
+			if (diff > 0) _data.Grow(diff);
 			_data.Copy(buffer, offset, Position, count);
 			Position += count;
 		}

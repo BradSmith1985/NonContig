@@ -374,6 +374,26 @@ namespace NcTests {
 			Assert.IsFalse(b1.SequenceEqual(b2));
 		}
 
+		[TestMethod]
+		public void TestCopyFromArray_Small() {
+			NcByteCollection b1 = new NcByteCollection(NcTestUtils.RandomBytes(30 * 1000));
+			byte[] b2 = NcTestUtils.RandomBytes(1000);
+
+			b1.Copy(b2, 0, 5000, 50);
+			Assert.IsTrue(b1.Count == (30 * 1000));
+			Assert.IsTrue(b1.SequenceEqual(b1.Take(5000).Concat(b2.Take(50)).Concat(b1.Skip(5050))));
+		}
+
+		[TestMethod]
+		public void TestCopyFromStream_Small() {
+			NcByteCollection b1 = new NcByteCollection(NcTestUtils.RandomBytes(30 * 1000));
+			NcByteStream b2 = new NcByteStream(NcTestUtils.RandomBytes(1000));
+
+			b1.Copy(b2, 5000, 50);
+			Assert.IsTrue(b1.Count == (30 * 1000));
+			Assert.IsTrue(b1.SequenceEqual(b1.Take(5000).Concat(b2.Data.Take(50)).Concat(b1.Skip(5050))));
+		}
+
 #if DEBUG
 		[TestMethod]
 		public void TestReserve() {

@@ -169,7 +169,6 @@ namespace NonContig {
 				return (int)LongCount;
 			}
 		}
-
 #if DEBUG
 		/// <summary>
 		/// Gets the number of blocks used by the collection to store its data.
@@ -850,7 +849,7 @@ namespace NonContig {
 				bool canResize = (current.Next == null) || (current == NextBlock());
 				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
 				Buffer.BlockCopy(src, srcIndex + i, current.Buffer, offset, size);
-				current.UsedCount = offset + size;
+				current.UsedCount = Math.Max(current.UsedCount, offset + size);
 				i += size;
 
 				if ((current.Next == null) && (i < count)) {
@@ -931,7 +930,7 @@ namespace NonContig {
 				bool canResize = (current.Next == null) || (current == NextBlock());
 				int size = (int)Math.Min(count - i, (canResize ? current.Buffer.Length : current.UsedCount) - offset);
 				Marshal.Copy(src + i, current.Buffer, offset, size);
-				current.UsedCount = offset + size;
+				current.UsedCount = Math.Max(current.UsedCount, offset + size);
 				i += size;
 
 				if ((current.Next == null) && (i < count)) {
@@ -1025,7 +1024,7 @@ namespace NonContig {
 					offset += actual;
 					i += actual;
 					remaining -= actual;
-					current.UsedCount = offset;
+					current.UsedCount = Math.Max(current.UsedCount, offset);
 				}
 				while ((actual > 0) && (actual < remaining));
 
@@ -1442,7 +1441,7 @@ namespace NonContig {
 					else {
 						return false;
 					}
-				}			
+				}
 
 				// reached the end without encountering inequality
 				return true;
