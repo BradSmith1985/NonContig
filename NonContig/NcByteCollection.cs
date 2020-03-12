@@ -1025,6 +1025,11 @@ namespace NonContig {
 					i += actual;
 					remaining -= actual;
 					current.UsedCount = Math.Max(current.UsedCount, offset);
+
+					if ((remaining > 0) && (actual == 0)) {
+						// stream does not contain requested number of bytes
+						return i;
+					}
 				}
 				while ((actual > 0) && (actual < remaining));
 
