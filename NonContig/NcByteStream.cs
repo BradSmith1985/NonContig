@@ -240,7 +240,10 @@ namespace NonContig {
 		/// </summary>
 		/// <returns></returns>
 		public override int ReadByte() {
-			return _data[Position++];
+			if (Position < _data.LongCount)
+				return _data[Position++];
+			else
+				return -1;
 		}
 
 		/// <summary>
