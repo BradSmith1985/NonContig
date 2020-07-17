@@ -162,18 +162,22 @@ namespace NonContig {
 		/// <param name="origin"></param>
 		/// <returns></returns>
 		public override long Seek(long offset, SeekOrigin origin) {
+			long newPosition;
 			switch (origin) {
 				case SeekOrigin.Current:
-					Position += offset;
+					newPosition = Position + offset;
 					break;
 				case SeekOrigin.End:
-					Position = (_data.LongCount - 1) + offset;
+					newPosition = _data.LongCount + offset;
 					break;
 				default:
-					Position = offset;
+					newPosition = offset;
 					break;
 			}
 
+			if (newPosition < 0) throw new IOException("Cannot seek to a position before the beginning of the stream.");
+
+			Position = newPosition;
 			return Position;
 		}
 
