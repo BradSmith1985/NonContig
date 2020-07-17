@@ -167,7 +167,7 @@ namespace NonContig {
 					Position += offset;
 					break;
 				case SeekOrigin.End:
-					Position = (_data.LongCount - 1) - offset;
+					Position = (_data.LongCount - 1) + offset;
 					break;
 				default:
 					Position = offset;
